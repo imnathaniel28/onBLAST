@@ -10,117 +10,83 @@ Repo / stack:
   - `packages/crypto`: Ed25519 auth + client-side encrypted recovery
 
 Critical constraints — do NOT violate:
-  - "Nothing to subpoena": do not add email, phone, IP, user-agent, device
-    fingerprint, or similar identifiers to schema, logs, or convenience
-    instrumentation.
-  - Moderation of opinion content stays community-driven. Mods only act on
-    hard-limit categories.
-  - CSAM/NCMEC integration is still a stub. Do NOT mark anything `SUBMITTED`
-    without a real integration.
-  - The spec intentionally defers: credibility scoring, business reply
-    accounts, formal appeals, rate limiting, admin auth for legal intake, job
-    queue, CDN, and final tuning for vote/petition parameters.
+  - "Nothing to subpoena": no email, phone, IP, user-agent, device fingerprint.
+  - Opinion moderation is community-driven only. Mods only act on hard limits.
+  - CSAM/NCMEC is a stub — do NOT mark anything SUBMITTED without real integration.
+  - Spec defers: credibility scoring, business reply accounts, formal appeals,
+    rate limiting, admin auth for legal intake, job queue, CDN, vote tuning.
 
 Auth model:
-  - `POST /auth/challenge` returns a nonce
-  - `POST /auth/verify` verifies Ed25519 signature, issues 15m JWT, and creates
-    the account on first sight
-  - Recovery is optional and client-encrypted; the server only stores
-    ciphertext
+  - POST /auth/challenge → nonce
+  - POST /auth/verify → Ed25519 sig check, 15m JWT, create account on first sight
+  - Recovery: optional, client-encrypted; server stores only ciphertext
 
-What was completed in the last two sessions:
+What's been built (cumulative):
 
-  Session N-1:
-  - Reputation update on vote — votes/routes.ts now atomically increments/
-    decrements post author's reputationScore; self-vote guard included.
-  - GET /posts/:id and GET /petitions/:id API endpoints added.
-  - fetchPost / fetchPetition / PetitionDetail added to web/src/lib/api.ts.
-  - /posts/[id] — client shell with interactive voting, optimistic score.
-  - /petitions/[id] — petition detail with reason, cosigner list, vote bar
-    (77% threshold marker).
-  - Seed script: prisma/seed.ts (3 accounts, 3 businesses, 6 posts).
-    Run: npm.cmd run db:seed
-  - SiteNav sticky bar in layout.tsx — shows truncated key when signed in.
-  - Permalink links from post cards → /posts/[id].
-  - Details links from petition rows → /petitions/[id].
+  API routes:
+    GET/POST /auth/challenge, /auth/verify, /auth/recovery/*
+    GET      /businesses, /businesses/:slug
+    POST     /businesses (auth required)
+    GET      /posts  (cursor pagination, authorId filter, returns {posts, nextCursor})
+    GET      /posts/:id
+    POST     /posts (auth required)
+    POST     /votes (auth required; updates author reputationScore)
+    GET/POST /petitions
+    GET      /petitions/:id (with cosigners + voteSummary)
+    POST     /petitions/:id/cosign, /petitions/:id/vote (auth required)
+    GET      /moderation-log (cursor paginated)
+    GET/POST /legal-demands (POST requires x-operator-key header if OPERATOR_KEY env set)
+    GET      /accounts/:id
+    GET      /health
+    POST     /csam (stub)
 
-  Session N (latest):
-  - Cosign + Vote buttons on /petitions/[id]:
-    - PetitionShell client component created (petitions/[id]/shell.tsx).
-    - Shows "Cosign" button on OPEN petitions, "Vote to ban / Vote to keep"
-      on AT_VOTE petitions. Auth-guarded with flash on failure.
-    - Viewer-has-cosigned check using currentAccountId() vs cosigners list.
-    - cosignPetition() and votePetition() added to web/src/lib/api.ts.
-  - Inline post composer on /businesses/[slug]:
-    - "Post here" toggle button in BusinessShell shows a textarea form.
-    - On submit: createPost with businessId pre-filled, refreshes post list.
-  - Business search in home sidebar:
-    - Search input above business list; filters by name client-side.
-    - Empty state shows "No match." when search yields nothing.
-  - /legal-demands page:
-    - Server page + LegalDemandsShell client component.
-    - Public Lumen-style list of all demands with expandable detail rows.
-    - Intake form (POST /legal-demands) — NOTE: currently unprotected,
-      needs operator-only auth gate before production.
-    - fetchLegalDemands() and createLegalDemand() added to api.ts.
-  - /moderation-log page:
-    - Server page + ModLogShell client component.
-    - Paginated list with "Load more" (cursor-based).
-    - Expandable entry rows show full details JSON.
-    - fetchModerationLog() updated to accept optional cursor param.
-  - Nav updated: "Mod log" and "Legal" links added between logo and auth.
-  - "Full log" link from home sidebar mod-log panel → /moderation-log.
-  - All typechecks pass (api + web).
+  Web pages:
+    /                   Home: feed + post composer + business browser (search) +
+                        petition list + mod log sidebar
+    /auth               Keypair create/recover flow
+    /businesses/[slug]  Business profile + inline post composer + paginated posts
+    /posts/[id]         Post detail + interactive voting
+    /petitions/[id]     Petition detail + Cosign/Vote buttons (status-aware)
+    /moderation-log     Paginated public enforcement log, expandable JSON details
+    /legal-demands      Lumen-style demand registry + operator intake form
+    /accounts/[id]      Account profile: pubkey, rep, counts, paginated post history
 
-Current product state:
-  - `/auth` — pseudonymous keypair flow + recovery backup.
-  - `/` — hero, post composer, live feed + votes + permalink links, business
-    browser (with search), petition list + detail links, mod log + "Full log"
-    link. Businesses created from sidebar.
-  - `/businesses/[slug]` — business profile + inline post composer + posts
-    with voting + permalinks.
-  - `/posts/[id]` — full post detail with interactive voting.
-  - `/petitions/[id]` — petition detail: reason, cosigners, vote bar,
-    Cosign/Vote buttons (status-aware).
-  - `/moderation-log` — paginated, expandable public enforcement log.
-  - `/legal-demands` — public Lumen-style demand registry + intake form.
-  - Global sticky nav: onBLAST logo, Mod log, Legal links, auth state.
-  - API at http://localhost:4000 (override with NEXT_PUBLIC_API_BASE_URL).
+  Global:
+    - SiteNav sticky bar (logo, Mod log, Legal links, auth state)
+    - Global not-found.tsx and error.tsx
+    - Seed script: prisma/seed.ts — run with npm.cmd run db:seed
 
-Known blockers / caveats:
-  - DB not migrated or seeded. Run:
+Known blockers:
+  - DB not migrated/seeded. Run:
       npm.cmd run db:migrate
-      npm.cmd run db:generate  (if needed)
+      npm.cmd run db:generate  (if needed after migrate)
       npm.cmd run db:seed
-  - PowerShell execution policy blocks npm.ps1; use npm.cmd.
-  - /legal-demands intake form is currently unauthenticated. Before
-    exposing publicly, add operator-only auth to POST /legal-demands in
-    apps/api/src/modules/legal-demands/routes.ts.
+  - PowerShell blocks npm.ps1; use npm.cmd.
+  - OPERATOR_KEY env var: if set, POST /legal-demands requires
+    x-operator-key header. Unset in dev = no check.
+  - JWT is 15m with no silent refresh yet — users get auth errors after
+    timeout until they re-sign via /auth.
 
-High-value next implementation options:
-  1. **Operator auth for legal intake** — add a simple shared-secret or
-     separate JWT-based guard to POST /legal-demands so only the designated
-     agent can log demands. The GET remains public.
-  2. **Feed pagination** — GET /posts currently returns top 50. Add a
-     cursor-based "Load more" to the home shell and business shell, matching
-     the pattern already used in the mod log page.
-  3. **Post linking on petition detail** — the petition's targetId is an
-     account, but posts by that account could be linked. A "View posts by
-     this account" query (GET /posts?authorId=...) would complete the
-     investigation flow. Needs a new query param on the posts route.
-  4. **Account profile page** — /accounts/[id] showing reputation, post
-     history, petition history. Useful for the community to evaluate credibility.
-     Requires GET /accounts/:id on the API.
-  5. **JWT refresh / session persistence** — the access token is 15 min.
-     There's no silent refresh yet. A user who stays on the page past 15 min
-     will get auth errors until they re-sign via /auth. Add a refresh flow
-     (either re-sign on challenge automatically, or extend JWT TTL in config).
-  6. **Error boundary pages** — Next.js error.tsx / not-found.tsx stubs for
-     /posts/[id], /petitions/[id], and /businesses/[slug] so 404s and API
-     errors show a readable page instead of a crash.
+High-value next options:
+  1. JWT silent refresh — re-challenge + re-sign automatically when token
+     expires. Needs a refresh helper in storage.ts called before each
+     authenticated API call.
+  2. Author links in business shell + post detail shell — post.author.id
+     is available; add <Link href={`/accounts/${post.author.id}`}> to
+     businesses/[slug]/shell.tsx postMeta and posts/[id]/shell.tsx meta.
+     Home shell already has this link.
+  3. Petition target account link — on /petitions/[id], the targetId is
+     an account ID; link it to /accounts/[targetId].
+  4. Error.tsx per route — only global error.tsx exists; add per-route
+     error.tsx for /posts/[id], /petitions/[id], /businesses/[slug] for
+     more targeted recovery messaging.
+  5. Search bar for petitions — home sidebar petitions panel shows all
+     petitions; add a status filter (OPEN / AT_VOTE / PASSED / FAILED).
+  6. Deployment config — Dockerfile, .env.example, and a deploy checklist
+     (DATABASE_URL, JWT_SECRET, OPERATOR_KEY, WEB_ORIGIN, API_PORT).
 
-Open decisions that should not be made alone:
-  1. Hosting provider / final deployment posture
-  2. Browser key storage upgrade path (localStorage vs IndexedDB/WebCrypto)
+Open decisions (do not decide alone):
+  1. Hosting provider / data-residency posture
+  2. localStorage → IndexedDB/WebCrypto for key storage (v2)
   3. Vote-weight curve tuning and petition thresholds
-  4. Operator auth mechanism for legal intake (shared-secret vs admin JWT)
+  4. JWT TTL strategy (extend vs. silent re-sign)

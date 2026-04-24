@@ -758,6 +758,11 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: 15,
   },
+  authorLink: {
+    color: "var(--muted)",
+    fontFamily: "monospace",
+    fontSize: 13,
+  },
   loadMoreButton: {
     border: "1px solid var(--line)",
     borderRadius: 999,
