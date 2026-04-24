@@ -1,0 +1,31 @@
+I'm starting a new app called onBLAST — a community-driven business accountability platform. The full product spec lives in `app-idea.md` in this directory. Read it first before doing anything else — all architectural decisions are already made and documented there, and you should not re-litigate them.
+
+Your job in this session: produce the initial repo scaffold only. Not the full app.
+
+Scope for this session:
+1. Recommend a stack and wait for my confirmation before scaffolding. Constraints that should drive the recommendation:
+   - Web app, will likely need a mobile client later
+   - Must support client-side crypto (pseudonymous keypair auth, no email/password)
+   - Must support a minimal-PII data model (no IP logs, no device fingerprints, no email/phone at signup)
+   - Hosted in the US, Washington-based entity
+   - Small team, prioritize boring/proven tools over cutting-edge
+2. Once stack is confirmed, scaffold:
+   - Folder structure
+   - Auth module (pseudonymous keypair-based — account = keypair, no email/password/phone)
+   - Core data model (users, posts, businesses, votes, petitions, moderation-log entries, legal-demand log entries)
+   - Voting-weight module skeleton (weight is a function of account age + earned reputation, not 1 account = 1 vote)
+   - Public moderation log schema (every mod action, every petition outcome, every legal demand received is publicly visible)
+
+Explicit non-goals for this session:
+- Do not build UI beyond what's needed to prove the auth flow works
+- Do not implement credibility scoring, business reply accounts, or appeals — those are v2
+- Do not add features not in `app-idea.md`
+
+Load-bearing constraints that are easy to miss (all detailed in the spec, but flagging here):
+- "Nothing to subpoena" architecture — the database must literally not hold data that could deanonymize users. If a design choice adds deanonymizing data, flag it and ask.
+- CSAM handling is federally mandated (18 U.S.C. § 2258A) and overrides everything else — the scaffold must include a reporting hook, even if the implementation is a stub.
+- Section 230 reliance — moderation of opinion-based content must stay community-driven, not mod-driven. Platform code must not accidentally create editorial-moderation surface area.
+
+Working directory: C:\Users\imn8\Documents\onBLAST (Windows 11, bash). The app-idea.md file is in the root.
+
+Start by reading `app-idea.md` in full, then tell me your proposed stack with reasoning. I'll confirm before you scaffold.

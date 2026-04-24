@@ -1,0 +1,268 @@
+// onBLAST data model.
+//
+// Core constraint: "nothing to subpoena". This schema must not hold data that
+// could deanonymize a user. No email, no phone, no IP, no device fingerprint,
+// no user-agent. Account identity is an Ed25519 public key. See app-idea.md.
+//
+// Escalation from that default is the SurveillanceUnlock table, which is
+// populated PROSPECTIVELY ONLY after a 77% community vote.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity ----------
+
+model Account {
+  id        String   @id @default(cuid())
+  // Ed25519 public key, base64url-encoded. This IS the account identity.
+  publicKey String   @unique
+  createdAt DateTime @default(now())
+
+  // Earned reputation. Voting weight is a function of (age, reputation).
+  reputationScore Int @default(0)
+
+  posts             Post[]
+  votes             Vote[]
+  petitionsOpened   Petition[]         @relation("petitionOpener")
+  petitionsTargeted Petition[]         @relation("petitionTarget")
+  petitionCosigns   PetitionCosigner[]
+  petitionVotes     PetitionVote[]
+  recoveryBackup    RecoveryBackup?
+  surveillanceUnlock SurveillanceUnlock?
+}
+
+// Optional passphrase-based recovery. The server holds only ciphertext.
+// The passphrase never leaves the client. See packages/crypto/src/recovery.ts.
+model RecoveryBackup {
+  id            String   @id @default(cuid())
+  accountId     String   @unique
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // User-chosen recovery id (random, base32). The "username" side of recovery.
+  recoveryId    String   @unique
+  // Client-side AES-GCM ciphertext of the 32-byte Ed25519 seed.
+  ciphertext    String
+  // Random salt used by the KDF (scrypt) on the client.
+  kdfSalt       String
+  // KDF parameters (scrypt N/r/p etc.), stored so future clients can decrypt
+  // blobs written by older clients.
+  kdfParams     Json
+  createdAt     DateTime @default(now())
+}
+
+// Server-issued challenge for signature-based auth. Stored so nonces can be
+// single-use and time-bounded. Contains only a pubkey + nonce — no PII.
+model Challenge {
+  id        String   @id @default(cuid())
+  publicKey String
+  nonce     String   @unique
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([publicKey])
+  @@index([expiresAt])
+}
+
+// ---------- Content ----------
+
+model Business {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  // Verified via paid business-verification flow (see app-idea.md funding).
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  posts Post[]
+}
+
+model Post {
+  id         String    @id @default(cuid())
+  authorId   String
+  author     Account   @relation(fields: [authorId], references: [id])
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id])
+  content    String
+  createdAt  DateTime  @default(now())
+
+  votes Vote[]
+
+  @@index([businessId, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id])
+  voterId   String
+  voter     Account  @relation(fields: [voterId], references: [id])
+  // +1 or -1
+  direction Int
+  // Voting weight snapshotted at vote time. See modules/voting-weight.
+  weight    Int
+  createdAt DateTime @default(now())
+
+  @@unique([postId, voterId])
+}
+
+// ---------- Petitions (community ban system) ----------
+
+enum PetitionStatus {
+  OPEN       // collecting cosigners
+  AT_VOTE    // threshold reached, vote in progress
+  PASSED     // >= 77% supermajority above quorum
+  FAILED     // quorum missed or supermajority not met
+  COOLDOWN   // failed, re-petition blocked for cooldown window
+}
+
+model Petition {
+  id       String         @id @default(cuid())
+  openerId String
+  opener   Account        @relation("petitionOpener", fields: [openerId], references: [id])
+  targetId String
+  target   Account        @relation("petitionTarget", fields: [targetId], references: [id])
+  reason   String
+  status   PetitionStatus @default(OPEN)
+  openedAt DateTime       @default(now())
+  closedAt DateTime?
+  outcome  String?
+
+  cosigners PetitionCosigner[]
+  votes     PetitionVote[]
+
+  @@index([targetId, openedAt])
+  @@index([status])
+}
+
+model PetitionCosigner {
+  id         String   @id @default(cuid())
+  petitionId String
+  petition   Petition @relation(fields: [petitionId], references: [id])
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([petitionId, accountId])
+}
+
+model PetitionVote {
+  id         String   @id @default(cuid())
+  petitionId String
+  petition   Petition @relation(fields: [petitionId], references: [id])
+  voterId    String
+  voter      Account  @relation(fields: [voterId], references: [id])
+  // true = ban, false = keep
+  ban        Boolean
+  weight     Int
+  createdAt  DateTime @default(now())
+
+  @@unique([petitionId, voterId])
+}
+
+// ---------- Moderation log (publicly readable, append-only) ----------
+
+enum ModLogEntryType {
+  MOD_ACTION              // hard-limit removal (CSAM, doxxing, threats, court-ordered)
+  PETITION_OUTCOME        // passed / failed / cooldown
+  LEGAL_DEMAND            // received and its outcome
+  CSAM_REPORT_SUBMITTED   // reported to NCMEC
+  SURVEILLANCE_UNLOCK     // community-voted prospective collection started/ended
+}
+
+// Every write to this table is public. It is append-only at the application
+// layer; the database user for the running app should have INSERT+SELECT
+// only on this table, never UPDATE/DELETE (enforced in migrations/ops).
+model ModerationLogEntry {
+  id          String          @id @default(cuid())
+  entryType   ModLogEntryType
+  subjectKind String? // 'post' | 'account' | 'petition' | 'business' | 'legal_demand' | 'csam_report'
+  subjectId   String?
+  action      String // machine-readable code
+  // Structured details. MUST NOT contain PII. Only include ids, counts,
+  // timestamps, vote aggregates, etc.
+  details     Json
+  createdAt   DateTime        @default(now())
+
+  @@index([entryType, createdAt])
+  @@index([subjectKind, subjectId])
+}
+
+// ---------- Legal demands (Lumen-style public log) ----------
+
+enum LegalDemandType {
+  DMCA
+  DEFAMATION_CLAIM
+  CEASE_AND_DESIST
+  SUBPOENA
+  COURT_ORDER
+  LAW_ENFORCEMENT_REQUEST
+  OTHER
+}
+
+enum LegalDemandStatus {
+  RECEIVED     // intake, no action yet
+  CHALLENGED   // designated agent pushed back for specifics
+  COMPLIED     // valid court order honored
+  DENIED       // found invalid / withdrawn under challenge
+  WITHDRAWN    // sender withdrew
+}
+
+model LegalDemand {
+  id            String            @id @default(cuid())
+  receivedAt    DateTime          @default(now())
+  demandType    LegalDemandType
+  // Sender identity is PUBLIC. If a lawyer sends a takedown, the fact of
+  // that demand and their name is logged. This is the strongest deterrent
+  // against abusive legal process.
+  senderName    String
+  senderContact String?
+  targetKind    String // 'post' | 'account' | 'business'
+  targetRef     String
+  summary       String
+  status        LegalDemandStatus @default(RECEIVED)
+  outcome       String?
+  responseText  String?
+  closedAt      DateTime?
+}
+
+// ---------- Community-voted prospective surveillance ----------
+
+// Populated ONLY while an unlock is active, and ONLY with data observed
+// AFTER the unlock started. Never retroactive. Expires unless re-voted.
+model SurveillanceUnlock {
+  id                  String    @id @default(cuid())
+  accountId           String    @unique
+  account             Account   @relation(fields: [accountId], references: [id])
+  authorizingPetition String? // petition id that authorized the unlock
+  startedAt           DateTime  @default(now())
+  expiresAt           DateTime
+  // Prospective collection buffer. Populated only while active.
+  collectedData       Json?
+  // Timestamp the target account was notified of the unlock.
+  notifiedAt          DateTime?
+}
+
+// ---------- CSAM reporting (18 U.S.C. § 2258A) ----------
+
+// Reactive reporting queue. Populated when a user flags a post as CSAM or
+// when a mod reviews and confirms. Integration with NCMEC CyberTipline is a
+// stub in modules/csam-report; production will require NCMEC credentials.
+model CsamReport {
+  id            String    @id @default(cuid())
+  reportedAt    DateTime  @default(now())
+  // 'user_flag' | 'mod_review'
+  triggerType   String
+  subjectPostId String
+  // 'PENDING_NCMEC_SUBMISSION' | 'SUBMITTED' | 'FAILED'
+  status        String    @default("PENDING_NCMEC_SUBMISSION")
+  ncmecReportId String?
+  submittedAt   DateTime?
+}
