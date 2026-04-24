@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import "./globals.css";
+import { SiteNav } from "./nav";
 
 export const metadata = {
   title: "onBLAST",
@@ -8,16 +10,8 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          fontFamily:
-            "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-          margin: 0,
-          padding: "2rem",
-          maxWidth: 720,
-          marginInline: "auto",
-        }}
-      >
+      <body>
+        <SiteNav />
         {children}
       </body>
     </html>

@@ -1,7 +1,15 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../db.js";
 import { appendModerationLog } from "../moderation-log/service.js";
+import { config } from "../../config.js";
+
+function requireOperatorKey(req: FastifyRequest, reply: FastifyReply): boolean {
+  if (!config.operatorKey) return true; // unset in dev — skip check
+  if (req.headers["x-operator-key"] === config.operatorKey) return true;
+  reply.code(403).send({ error: "invalid or missing operator key" });
+  return false;
+}
 
 // Legal demand intake.
 //
@@ -18,7 +26,8 @@ import { appendModerationLog } from "../moderation-log/service.js";
 // public routes so the data model + moderation-log integration are visible.
 
 export async function legalDemandsRoutes(app: FastifyInstance): Promise<void> {
-  app.post("/", async (req) => {
+  app.post("/", async (req, reply) => {
+    if (!requireOperatorKey(req, reply)) return;
     const body = z
       .object({
         demandType: z.enum([

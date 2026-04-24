@@ -9,6 +9,7 @@ import { petitionsRoutes } from "./modules/petitions/routes.js";
 import { moderationLogRoutes } from "./modules/moderation-log/routes.js";
 import { legalDemandsRoutes } from "./modules/legal-demands/routes.js";
 import { csamRoutes } from "./modules/csam-report/routes.js";
+import { accountsRoutes } from "./modules/accounts/routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -47,6 +48,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(moderationLogRoutes, { prefix: "/moderation-log" });
   await app.register(legalDemandsRoutes, { prefix: "/legal-demands" });
   await app.register(csamRoutes, { prefix: "/csam" });
+  await app.register(accountsRoutes, { prefix: "/accounts" });
 
   app.get("/health", async () => ({ ok: true }));
 

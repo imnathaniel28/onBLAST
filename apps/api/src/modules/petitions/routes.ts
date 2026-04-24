@@ -73,7 +73,54 @@ export async function petitionsRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  app.get("/:id", async (req, reply) => {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+
+    const petition = await prisma.petition.findUnique({
+      where: { id: params.id },
+      include: {
+        _count: { select: { cosigners: true, votes: true } },
+        cosigners: {
+          select: { accountId: true, createdAt: true },
+          take: 50,
+          orderBy: { createdAt: "asc" },
+        },
+        votes: { select: { ban: true, weight: true } },
+      },
+    });
+
+    if (!petition) return reply.code(404).send({ error: "not found" });
+
+    const banWeight = petition.votes.filter((v) => v.ban).reduce((s, v) => s + v.weight, 0);
+    const keepWeight = petition.votes.filter((v) => !v.ban).reduce((s, v) => s + v.weight, 0);
+    const totalWeight = banWeight + keepWeight;
+    const banPercent = totalWeight > 0 ? Math.round((banWeight / totalWeight) * 100) : 0;
+
+    return {
+      id: petition.id,
+      openerId: petition.openerId,
+      targetId: petition.targetId,
+      reason: petition.reason,
+      status: petition.status,
+      openedAt: petition.openedAt,
+      closedAt: petition.closedAt,
+      outcome: petition.outcome,
+      _count: petition._count,
+      cosigners: petition.cosigners,
+      voteSummary: { banWeight, keepWeight, banPercent },
+    };
+  });
+
   app.get("/", async () => {
-    return prisma.petition.findMany({ orderBy: { openedAt: "desc" }, take: 50 });
+    const petitions = await prisma.petition.findMany({
+      orderBy: { openedAt: "desc" },
+      take: 50,
+      include: {
+        _count: {
+          select: { cosigners: true, votes: true },
+        },
+      },
+    });
+    return petitions;
   });
 }

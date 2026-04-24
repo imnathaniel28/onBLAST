@@ -12,8 +12,12 @@
     "web:dev": "npm run dev --workspace apps/web",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "typecheck": "tsc -b"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
     "prisma": "^5.19.0",

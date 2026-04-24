@@ -1,13 +1,21 @@
-import Link from "next/link";
+import { fetchBusinesses, fetchModerationLog, fetchPetitions, fetchPosts } from "@/lib/api";
+import { HomeShell } from "./shell";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const [businesses, postsPage, moderationLog, petitions] = await Promise.all([
+    fetchBusinesses(),
+    fetchPosts(),
+    fetchModerationLog(),
+    fetchPetitions(),
+  ]);
+
   return (
-    <main>
-      <h1>onBLAST</h1>
-      <p>Community-driven business accountability. Anonymous by design.</p>
-      <p>
-        <Link href="/auth">Sign in / create account</Link>
-      </p>
-    </main>
+    <HomeShell
+      initialBusinesses={businesses}
+      initialPosts={postsPage.posts}
+      initialNextCursor={postsPage.nextCursor}
+      initialModerationEntries={moderationLog.entries}
+      initialPetitions={petitions}
+    />
   );
 }
